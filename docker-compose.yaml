@@ -11,8 +11,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql
-    ports:
-      - "5432:5432"
     networks:
       - jpiere_network
     healthcheck:
