@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:13
+    platform: linux/amd64
+    hostname: "postgres"
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - jpiere_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  jpiere:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    image: jpiere:11
+    hostname: "jpiere"
+    ports:
+      - "8080:8080"
+      - "12612:12612"
+    environment:
+      - TZ=Asia/Tokyo
+      - DB_NAME=idempiere
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=adempiere
+      - DB_PASS=adempiere
+      - DB_ADMIN_PASS=postgres
+      - JAVA_OPTS=-Xms256M -Xmx2048M
+      - MIGRATE_EXISTING_DATABASE=false
+      - DISABLE_SSL=true
+    volumes:
+      - jpiere_config:/opt/idempiere/configuration
+      - jpiere_plugins:/opt/idempiere/plugins
+      - jpiere_log:/opt/idempiere/log
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - jpiere_network
+
+volumes:
+  jpiere_plugins:
+  jpiere_config:
+  jpiere_log:
+  postgres_data:
+
+networks:
+  jpiere_network:
+    driver: bridge
