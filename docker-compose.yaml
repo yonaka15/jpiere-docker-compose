@@ -4,16 +4,33 @@ services:
     platform: linux/amd64
     hostname: "postgres"
     environment:
+      # PostgreSQLデータベースコンテナが初期化時に作成するデフォルトのデータベース名。
+      # jpiereサービスはこのデータベースに直接接続するわけではありません。
+      # jpiereコンテナのdocker-entrypoint.shが、特権ユーザー（DB_ADMIN_USERまたはデフォルトの 'postgres'）と
+      # DB_ADMIN_PASSを使用してこのDB（または他の管理DB）に接続し、
+      # jpiereサービスが使用するDB_NAMEで指定されたデータベースを別途作成・管理します。
       - POSTGRES_DB=postgres
+      # PostgreSQLデータベースコンテナが初期化時に作成するデフォルトのスーパーユーザー名。
+      # このユーザー名は、jpiereコンテナのdocker-entrypoint.shがスーパーユーザーとしてDBに接続する際 (例: psql -U postgres ...) や、
+      # iDempiereのconsole-setup.shに渡される特権ユーザー名 (jpiereサービスのDB_ADMIN_USER環境変数を経由、未設定時は'postgres'がデフォルト) と
+      # 一致している必要があります。
       - POSTGRES_USER=postgres
+      # PostgreSQLデータベースコンテナが初期化時に作成するデフォルトのスーパーユーザーのパスワード。
+      # jpiereサービスのDB_ADMIN_PASSの値と一致させる必要があります。このパスワードは、
+      # docker-entrypoint.shがスーパーユーザーとしてDBに接続する際や、iDempiereのconsole-setup.shに渡す
+      # 特権ユーザーのパスワードとして使用されます。
       - POSTGRES_PASSWORD=postgres
+      # PostgreSQLデータベースの初期化オプション。文字コードや照合順序などを設定します。
       - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # ./init-postgres.sql が存在すれば、コンテナ内の /docker-entrypoint-initdb.d/ にマウントされ、
+      # PostgreSQL初回起動時に実行されます。現在はリポジトリにこのファイルは存在しません。
+      # - ./init-postgres.sql:/docker-entrypoint-initdb.d/init-postgres.sql
     networks:
       - jpiere_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"] # ここでの 'postgres' はPOSTGRES_USERの値
       interval: 10s
       timeout: 5s
       retries: 5
@@ -26,18 +43,39 @@ services:
     image: jpiere:11
     hostname: "jpiere"
     ports:
-      - "8080:8080"
-      - "12612:12612"
+      - "8080:8080" # jPiere HTTPポート
+      - "12612:12612" # jPiere Hazelcastポートなど (用途に応じて確認)
     environment:
+      # コンテナのタイムゾーン設定
       - TZ=Asia/Tokyo
+      # jPiereアプリケーションが使用するデータベース名。
+      # docker-entrypoint.shにより、この名前でデータベースが作成されます。
       - DB_NAME=idempiere
+      # jPiereアプリケーションが接続するデータベースホスト名。
+      # 同一docker-compose内のpostgresサービスを指定します。
       - DB_HOST=postgres
+      # jPiereアプリケーションが接続するデータベースポート。
       - DB_PORT=5432
+      # jPiereアプリケーションがデータベースに接続する際のユーザー名。
+      # docker-entrypoint.shにより、この名前でユーザーが作成されます。
       - DB_USER=adempiere
+      # jPiereアプリケーションがデータベースに接続する際のパスワード。
+      # docker-entrypoint.shにより、このパスワードでユーザーが作成されます。
       - DB_PASS=adempiere
+      # iDempiereのconsole-setup.shがデータベースのセットアップや管理タスクを行う際に使用するPostgreSQLの特権ユーザー名を指定します。
+      # docker-entrypoint.shは、この環境変数が未設定の場合、デフォルト値 'postgres' をconsole-setup.shに渡します。
+      # この値は、postgresサービスのPOSTGRES_USERと一致させる必要があります。
+      # なお、docker-entrypoint.sh内のいくつかのDB操作(psqlコマンド)では、接続ユーザーとして 'postgres' が直接指定されている箇所もあります。
+      - DB_ADMIN_USER=postgres
+      # iDempiereのconsole-setup.shやdocker-entrypoint.sh内のDB操作(psqlコマンド)が、PostgreSQLの特権ユーザー
+      # (DB_ADMIN_USERで指定されたユーザー、または未設定時のデフォルト 'postgres') として接続する際に使用するパスワード。
+      # postgresサービスのPOSTGRES_PASSWORDと一致させる必要があります。
       - DB_ADMIN_PASS=postgres
+      # jPiereアプリケーション(Java)の起動オプション。メモリ割り当てなどを指定します。
       - JAVA_OPTS=-Xms256M -Xmx2048M
+      # 既存のデータベースがある場合にマイグレーションを行うかどうか。
       - MIGRATE_EXISTING_DATABASE=false
+      # SSLを無効化するかどうか。trueの場合、Jettyの設定でSSLが無効化されます。
       - DISABLE_SSL=true
     volumes:
       - jpiere_config:/opt/idempiere/configuration
