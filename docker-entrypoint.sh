@@ -23,6 +23,7 @@ DB_PORT=${DB_PORT:-5432}
 DB_NAME=${DB_NAME:-idempiere}
 DB_USER=${DB_USER:-adempiere}
 DB_PASS=${DB_PASS:-adempiere}
+DB_ADMIN_USER=${DB_ADMIN_USER:-postgres} # <<< 修正点: DB_ADMIN_USER の定義を追加
 DB_ADMIN_PASS=${DB_ADMIN_PASS:-postgres}
 MAIL_HOST=${MAIL_HOST:-0.0.0.0}
 MAIL_USER=${MAIL_USER:-info}
@@ -195,7 +196,7 @@ setup_jetty_config() {
       <Arg>org.eclipse.jetty.jndi</Arg>
     </Call>
 </Configure>
-EOF
+EOF'''
         echo "✓ Created basic jetty.xml"
     fi
     
@@ -244,7 +245,7 @@ EOF
 <Configure id="sslContextFactory" class="org.eclipse.jetty.util.ssl.SslContextFactory$Server">
   <Set name="Provider"><Property name="jetty.sslContext.provider"/></Set>
 </Configure>
-EOF
+EOF'''
             echo "✓ Created minimal jetty-ssl.xml"
         fi
         
@@ -257,7 +258,7 @@ EOF
 <Configure id="sslContextFactory" class="org.eclipse.jetty.util.ssl.SslContextFactory$Server">
   <!-- SSL disabled -->
 </Configure>
-EOF
+EOF'''
             echo "✓ Created minimal jetty-ssl-context.xml"
         fi
         
@@ -269,7 +270,7 @@ EOF
 <!-- HTTPS connector disabled as DISABLE_SSL=true -->
 <Configure id="Server" class="org.eclipse.jetty.server.Server">
 </Configure>
-EOF
+EOF'''
     echo "✓ Created minimal jetty-https.xml for disabled SSL"
     # もし jetty-https.xml.disabled が存在すれば削除
     rm -f "$jetty_etc_dir/jetty-https.xml.disabled"
@@ -284,7 +285,7 @@ fi
 if [[ "$1" == "idempiere" ]]; then
     # PostgreSQL接続待機
     RETRIES=30
-    until PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U postgres -c "\q" > /dev/null 2>&1 || [[ $RETRIES == 0 ]]; do
+    until PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U "$DB_ADMIN_USER" -c "\q" > /dev/null 2>&1 || [[ $RETRIES == 0 ]]; do # <<< 修正点
         echo "Waiting for postgres server, $((RETRIES--)) remaining attempts..."
         sleep 1
     done
@@ -305,6 +306,7 @@ if [[ "$1" == "idempiere" ]]; then
 
     # コンソールセットアップ実行
     echo "Executing console-setup..."
+    # 注意: console-setup.sh に DB_ADMIN_USER を渡す必要があれば、ここの入力文字列を修正する必要がある
     echo -e "$JAVA_HOME\n$JAVA_OPTIONS\n$IDEMPIERE_HOME\n$KEY_STORE_PASS\n$KEY_STORE_ON\n$KEY_STORE_OU\n$KEY_STORE_O\n$KEY_STORE_L\n$KEY_STORE_S\n$KEY_STORE_C\n$HOST\n$IDEMPIERE_PORT\n$IDEMPIERE_SSL_PORT\nN\n2\n$DB_HOST\n$DB_PORT\n$DB_NAME\n$DB_USER\n$DB_PASS\n$DB_ADMIN_PASS\n$MAIL_HOST\n$MAIL_USER\n$MAIL_PASS\n$MAIL_ADMIN\nY\n" | ./console-setup.sh
 
     # コンソールセットアップ後のJetty設定再処理（念のため）
@@ -316,23 +318,23 @@ if [[ "$1" == "idempiere" ]]; then
         
         # PostgreSQLユーザーが存在しない場合は作成
         echo "Creating PostgreSQL user '$DB_USER' if not exists..."
-        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U postgres -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';" 2>/dev/null || echo "User $DB_USER already exists"
-        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U postgres -c "ALTER USER $DB_USER CREATEDB;" 2>/dev/null || echo "User $DB_USER already has CREATEDB privilege"
+        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U "$DB_ADMIN_USER" -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';" 2>/dev/null || echo "User $DB_USER already exists" # <<< 修正点
+        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U "$DB_ADMIN_USER" -c "ALTER USER $DB_USER CREATEDB;" 2>/dev/null || echo "User $DB_USER already has CREATEDB privilege" # <<< 修正点
         
         # データベースが存在しない場合は作成
         echo "Creating database '$DB_NAME' if not exists..."
-        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U postgres -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;" 2>/dev/null || echo "Database $DB_NAME already exists"
+        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U "$DB_ADMIN_USER" -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;" 2>/dev/null || echo "Database $DB_NAME already exists" # <<< 修正点
         
         # JPiere固有: ExpDat.dmpでデータベース初期化
         echo "Importing JPiere database from ExpDat.dmp..."
-        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U postgres -d $DB_NAME -f /tmp/ExpDat.dmp
+        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U "$DB_ADMIN_USER" -d $DB_NAME -f /tmp/ExpDat.dmp # <<< 修正点
         echo "JPiere database import completed"
         
         # データベース権限設定
         echo "Setting database permissions..."
-        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U postgres -d $DB_NAME -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
-        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U postgres -d $DB_NAME -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $DB_USER;"
-        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U postgres -d $DB_NAME -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;"
+        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U "$DB_ADMIN_USER" -d $DB_NAME -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;" # <<< 修正点
+        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U "$DB_ADMIN_USER" -d $DB_NAME -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $DB_USER;" # <<< 修正点
+        PGPASSWORD=$DB_ADMIN_PASS psql -h $DB_HOST -U "$DB_ADMIN_USER" -d $DB_NAME -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $DB_USER;" # <<< 修正点
         
         # データベース同期
         cd utils
